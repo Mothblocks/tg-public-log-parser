@@ -9,6 +9,7 @@ macro_rules! censor {
     };
 }
 
+#[tracing::instrument(skip_all)]
 pub fn parse_line(line: &str) -> Cow<str> {
     let line = line.trim();
 
@@ -106,6 +107,8 @@ pub fn parse_line(line: &str) -> Cow<str> {
         "ADMINPRIVATE" => censor!("private logtype").into(),
 
         "TOPIC" => censor!("world_topic logs").into(),
+
+        "SQL" => censor!("sql logs").into(),
 
         _ => Cow::Borrowed(line),
     }
