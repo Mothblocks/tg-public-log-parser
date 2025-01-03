@@ -28,7 +28,7 @@ pub fn parse_file(path: &Path) -> eyre::Result<Option<(Cow<'static, Path>, Strin
         // Runtime condensing is done in the runtimes.rs parser
         "runtime.log" => Ok(Some((
             Cow::Borrowed(Path::new("runtime.txt")),
-            runtimes::process_runtimes_log(&filter_ips(&read_to_string(path)?)),
+            runtimes::process_runtimes_log(&read_to_string(path)?),
         ))),
 
         // Pass through, but replace .txt with .log
