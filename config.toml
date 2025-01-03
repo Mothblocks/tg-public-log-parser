@@ -1,0 +1,5 @@
+address = "127.0.0.1:8421"
+
+# Users can access any folder in here, and processing is only done
+# once a file access is requested.
+raw_logs_path = "./raw-logs-tests"

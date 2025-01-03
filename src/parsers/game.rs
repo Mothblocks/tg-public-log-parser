@@ -2,6 +2,8 @@ use std::{borrow::Cow, sync::LazyLock};
 
 use regex::{Regex, RegexSet};
 
+use super::ip_filtering::filter_ips;
+
 // A macro to allow for &'static str returns
 macro_rules! censor {
     ($kind:literal) => {
@@ -114,8 +116,8 @@ pub fn parse_line(line: &str) -> Cow<str> {
     }
 }
 
-pub fn process_game_log(contents: &str) -> String {
-    contents
+pub fn process_game_log(contents: String) -> String {
+    filter_ips(&contents)
         .lines()
         .map(parse_line)
         .fold(String::new(), |a, b| a + &b + "\n")

@@ -1,10 +1,11 @@
 use std::{borrow::Cow, collections::HashMap, iter::Peekable, sync::LazyLock};
 
 use regex::Regex;
+use serde::Serializer;
 
 use crate::parsers::ip_filtering::filter_ips;
 
-pub fn process_runtimes_log(contents: &str) -> String {
+pub fn process_runtimes_log(contents: String) -> String {
     contents
         .lines()
         .map(|line| sanitize_runtimes_line(line))
@@ -20,13 +21,13 @@ fn sanitize_runtimes_line(line: &str) -> Cow<str> {
     STRING_OUTPUT_REGEX.replace(line, "-censored (string output)")
 }
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, serde::Serialize)]
 struct CondensedRuntimeKey<'a> {
     message: &'a str,
     proc_name: &'a str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 struct CondensedRuntimeValue<'a> {
     source_file: Option<&'a str>,
     usr: &'a str,
@@ -36,43 +37,48 @@ struct CondensedRuntimeValue<'a> {
     count: u64,
 }
 
-pub fn condense_runtimes(contents: &str) -> String {
+#[derive(Debug, serde::Serialize)]
+struct CondensedRuntime<'a> {
+    #[serde(flatten)]
+    key: CondensedRuntimeKey<'a>,
+
+    #[serde(flatten)]
+    value: CondensedRuntimeValue<'a>,
+}
+
+pub fn condense_runtimes_to_string(contents: &str) -> String {
     let contents = filter_ips(contents);
 
     let condensed_runtimes = get_condensed_runtimes(&contents);
 
-    let mut condensed_runtimes_sorted: Vec<(CondensedRuntimeKey<'_>, CondensedRuntimeValue<'_>)> =
-        condensed_runtimes.runtimes.into_iter().collect::<Vec<_>>();
-    condensed_runtimes_sorted.sort_by_key(|(_, runtime)| u64::MAX - runtime.count);
-
     let mut lines = vec![
 		"Note: The source file, src and usr are all from the FIRST of the identical runtimes. Everything else is cropped.".to_owned(),
 		"".to_owned(),
-		format!("Total unique runtimes: {}", condensed_runtimes_sorted.len()),
+		format!("Total unique runtimes: {}", condensed_runtimes.runtimes.len()),
 		format!("Total runtimes: {}", condensed_runtimes.total_count),
 		"".to_owned(),
 		"** Runtimes **".to_owned(),
 	];
 
-    for (key, value) in condensed_runtimes_sorted {
+    for runtime in condensed_runtimes.runtimes {
         lines.push("".to_owned());
 
         lines.push(format!(
             "The following runtime has occurred {} time(s).",
-            value.count
+            runtime.value.count
         ));
 
-        lines.push(format!("runtime error: {}", key.message));
-        lines.push(format!("proc name: {}", key.proc_name));
+        lines.push(format!("runtime error: {}", runtime.key.message));
+        lines.push(format!("proc name: {}", runtime.key.proc_name));
 
-        if let Some(source_file) = value.source_file {
+        if let Some(source_file) = runtime.value.source_file {
             lines.push(format!("  source file: {source_file}"));
         }
 
-        lines.push(format!("  usr: {}", value.usr));
-        lines.push(format!("  src: {}", value.src));
+        lines.push(format!("  usr: {}", runtime.value.usr));
+        lines.push(format!("  src: {}", runtime.value.src));
 
-        if let Some(src_loc) = value.src_loc {
+        if let Some(src_loc) = runtime.value.src_loc {
             lines.push(format!("  src.loc: {src_loc}"));
         }
 
@@ -85,9 +91,15 @@ pub fn condense_runtimes(contents: &str) -> String {
     lines.join("\n")
 }
 
+pub fn condense_runtimes_to_json(contents: &str) -> serde_json::Value {
+    serde_json::to_value(get_condensed_runtimes(&filter_ips(contents)))
+        .expect("couldn't serialize json")
+}
+
+#[derive(serde::Serialize)]
 struct CondensedRuntimes<'a> {
     total_count: u64,
-    runtimes: HashMap<CondensedRuntimeKey<'a>, CondensedRuntimeValue<'a>>,
+    runtimes: Vec<CondensedRuntime<'a>>,
 }
 
 fn get_condensed_runtimes(runtime_contents: &str) -> CondensedRuntimes {
@@ -162,9 +174,15 @@ fn get_condensed_runtimes(runtime_contents: &str) -> CondensedRuntimes {
         );
     }
 
+    let mut condensed_runtimes_sorted: Vec<CondensedRuntime> = condensed_runtimes
+        .into_iter()
+        .map(|(key, value)| CondensedRuntime { key, value })
+        .collect();
+    condensed_runtimes_sorted.sort_by_key(|runtime| u64::MAX - runtime.value.count);
+
     CondensedRuntimes {
         total_count: runtime_count,
-        runtimes: condensed_runtimes,
+        runtimes: condensed_runtimes_sorted,
     }
 }
 
@@ -252,7 +270,7 @@ mod tests {
                 )
                 .unwrap();
 
-                let condensed_runtimes = condense_runtimes(&raw_runtimes);
+                let condensed_runtimes = condense_runtimes_to_string(&raw_runtimes);
 
                 // The C++ runtime condenser only sorts by count, which means everything else is unspecified.
                 let mut rust_split = condensed_runtimes
@@ -292,8 +310,6 @@ mod tests {
 
     #[test]
     fn test_2023_11_logs() {
-        crate::tracy::enable_tracy();
-
         test_log_directory(
             Path::new("raw-logs-tests/sybil-2023-11"),
             Path::new("raw-logs-tests/sybil-2023-11-public"),
