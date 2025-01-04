@@ -1,4 +1,4 @@
-use std::{io::ErrorKind, sync::Arc};
+use std::{io::ErrorKind, path::PathBuf, sync::Arc};
 
 use axum::{
     extract::{OriginalUri, State},
@@ -190,15 +190,17 @@ fn traversal_page(config: &Config, path: &std::path::Path) -> eyre::Result<Strin
     // Folders first, then ABC order
     items.sort_by(|a, b| (!a.contains("/</a>"), a).cmp(&(!b.contains("/</a>"), b)));
 
+    let relative_to_top = path.strip_prefix(&config.raw_logs_path)?;
+
     Ok(format!(
         "
 			<html>
 				<head>
-					<title>todo: title</title>
+					<title>{}</title>
 				</head>
 
 				<body>
-					<i>todo: split segments into links you can click on</i><hr />
+					<p>{}</p><hr />
 
 					<ul>
 						{}
@@ -206,6 +208,24 @@ fn traversal_page(config: &Config, path: &std::path::Path) -> eyre::Result<Strin
 				</body>
 			</html>
 		",
+        relative_to_top.display(),
+        link_segments(relative_to_top),
         items.join("")
     ))
+}
+
+fn link_segments(path: &std::path::Path) -> String {
+    let mut pieces = Vec::new();
+
+    let mut path_to_this_point = PathBuf::new();
+    for component in path.components() {
+        path_to_this_point = path_to_this_point.join(component);
+        pieces.push(format!(
+            "<a href='/{}'>{}</a>",
+            path_to_this_point.display(),
+            component.as_os_str().to_string_lossy()
+        ));
+    }
+
+    pieces.join("/")
 }
