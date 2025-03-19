@@ -1,7 +1,6 @@
 use std::{borrow::Cow, collections::HashMap, iter::Peekable, sync::LazyLock};
 
 use regex::Regex;
-use serde::Serializer;
 
 use crate::parsers::ip_filtering::filter_ips;
 

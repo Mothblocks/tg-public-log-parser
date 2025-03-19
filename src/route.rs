@@ -2,19 +2,18 @@ use std::{io::ErrorKind, path::PathBuf, sync::Arc};
 
 use axum::{
     extract::{OriginalUri, State},
-    http::{request, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
 };
 
-use crate::{
-    app_state::{AppState, Config},
-    parsers::get_file_sanitization_strategy,
-};
+use crate::{app_state::AppState, parsers::get_file_sanitization_strategy};
 
 pub const RUNTIME_CONDENSED_JSON: &str = "runtime.condensed.json";
 pub const RUNTIME_CONDENSED_TXT: &str = "runtime.condensed.txt";
 
-// #[tracing::instrument]
+const NOT_FOUND: (StatusCode, &str) = (StatusCode::NOT_FOUND, "couldn't find that path");
+
+#[tracing::instrument]
 pub async fn get(
     State(state): State<Arc<AppState>>,
     OriginalUri(uri): OriginalUri,
@@ -27,6 +26,23 @@ pub async fn get(
     if !requested_path.starts_with(&state.config.raw_logs_path) {
         tracing::warn!("attempted path traversal: {uri}");
         return Ok((StatusCode::FORBIDDEN, "attempted path traversal").into_response());
+    }
+
+    match state.path_is_ongoing_round(&requested_path).await {
+        Ok(true) => {
+            tracing::debug!("blocking access to ongoing round");
+            return Ok(NOT_FOUND.into_response());
+        }
+
+        Ok(false) => {}
+
+        Err(error) => {
+            return Ok(error_to_response(
+                error,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error figuring out if that round is ongoing or not",
+            ));
+        }
     }
 
     // Pretend files
@@ -64,7 +80,7 @@ pub async fn get(
         .await
         .map_err(|error| {
             if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) {
-                (StatusCode::NOT_FOUND, "couldn't find that path").into_response()
+                NOT_FOUND.into_response()
             } else {
                 error_to_response(
                     error,
@@ -78,18 +94,20 @@ pub async fn get(
         Ok((
             StatusCode::OK,
             headers("text/html"),
-            traversal_page(&state.config, &requested_path).map_err(|error| {
-                error_to_response(
-                    error,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "error creating traversal page",
-                )
-            }),
+            traversal_page(&state, &requested_path)
+                .await
+                .map_err(|error| {
+                    error_to_response(
+                        error,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "error creating traversal page",
+                    )
+                }),
         )
             .into_response())
     } else if metadata.is_file() {
         let Some(strategy) = get_file_sanitization_strategy(&requested_path) else {
-            return Ok((StatusCode::NOT_FOUND, "couldn't find that path").into_response());
+            return Ok(NOT_FOUND.into_response());
         };
 
         Ok((
@@ -116,10 +134,10 @@ pub async fn get(
 }
 
 fn headers(content_type: &str) -> [(&'static str, &str); 2] {
-    return [
+    [
         ("cache-control", "public, max-age=31536000"),
         ("content-type", content_type),
-    ];
+    ]
 }
 
 fn error_to_response(
@@ -137,7 +155,7 @@ fn error_to_response(
         .into_response()
 }
 
-fn traversal_page(config: &Config, path: &std::path::Path) -> eyre::Result<String> {
+async fn traversal_page(state: &AppState, path: &std::path::Path) -> eyre::Result<String> {
     let mut items = vec![];
 
     let read_dir = std::fs::read_dir(path)?;
@@ -146,12 +164,17 @@ fn traversal_page(config: &Config, path: &std::path::Path) -> eyre::Result<Strin
         let entry = entry?;
 
         let entry_path = entry.path();
+
+        if state.path_is_ongoing_round(&entry_path).await? {
+            continue;
+        }
+
         let entry_stem = match entry_path.file_stem() {
             Some(entry_stem) => entry_stem.to_string_lossy(),
             None => continue,
         };
 
-        let link_path = match entry_path.strip_prefix(&config.raw_logs_path) {
+        let link_path = match entry_path.strip_prefix(&state.config.raw_logs_path) {
             Ok(link_path) => link_path,
             Err(_) => eyre::bail!("couldn't strip prefix with raw logs path"),
         };
@@ -190,7 +213,7 @@ fn traversal_page(config: &Config, path: &std::path::Path) -> eyre::Result<Strin
     // Folders first, then ABC order
     items.sort_by(|a, b| (!a.contains("/</a>"), a).cmp(&(!b.contains("/</a>"), b)));
 
-    let relative_to_top = path.strip_prefix(&config.raw_logs_path)?;
+    let relative_to_top = path.strip_prefix(&state.config.raw_logs_path)?;
 
     Ok(format!(
         "

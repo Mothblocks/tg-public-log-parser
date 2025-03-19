@@ -3,3 +3,12 @@ address = "127.0.0.1:8421"
 # Users can access any folder in here, and processing is only done
 # once a file access is requested.
 raw_logs_path = "./raw-logs-tests"
+
+[ongoing_round_protection]
+serverinfo = "https://tgstation13.org/serverinfo.json"
+
+# Map folder names to identifiers in serverinfo.json.
+# Anything in here will check the identifier in serverinfo.json
+# to make sure ongoing rounds aren't leaked.
+[ongoing_round_protection.paths_to_identifiers]
+sybil-2023-11 = "sybil"
