@@ -17,7 +17,11 @@ async fn main() -> eyre::Result<()> {
         .init();
     tracing::info!("tg-public-log-parser");
 
-    let state = Arc::new(app_state::AppState::load().context("loading app state")?);
+    let state = Arc::new(
+        app_state::AppState::load()
+            .await
+            .context("loading app state")?,
+    );
     tracing::info!("hosting on {}", state.config.address);
 
     let listener = tokio::net::TcpListener::bind(state.config.address).await?;

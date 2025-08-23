@@ -103,17 +103,30 @@ impl Drop for OngoingRoundProtection {
 }
 
 async fn fetch_ongoing_rounds(serverinfo_url: &str) -> eyre::Result<HashMap<String, u64>> {
-    let server_info = reqwest::get(serverinfo_url)
+    let server_info_bytes = reqwest::get(serverinfo_url)
         .await?
         .error_for_status()?
-        .json::<ServerInfo>()
+        .bytes()
         .await?;
 
-    let round_ids = HashMap::from_iter(server_info.servers.into_iter().map(|server| {
-        (
-            server.data.identifier,
-            server.data.round_id.parse().expect("invalid round id"),
-        )
+    let server_info: ServerInfo = match serde_json::from_slice(&server_info_bytes) {
+        Ok(server_info) => server_info,
+        Err(error) => {
+            tracing::error!(
+                "bad serverinfo.json, contents = {}",
+                String::from_utf8_lossy(&server_info_bytes)
+            );
+            return Err(error.into());
+        }
+    };
+
+    let round_ids = HashMap::from_iter(server_info.servers.into_iter().filter_map(|server| {
+        server.data.map(|data| {
+            (
+                data.identifier,
+                data.round_id.parse().expect("invalid round id"),
+            )
+        })
     }));
 
     tracing::debug!("current round ids: {round_ids:?}");
@@ -134,7 +147,7 @@ struct ServerInfo {
 
 #[derive(serde::Deserialize)]
 struct Server {
-    data: ServerData,
+    data: Option<ServerData>,
 }
 
 #[derive(serde::Deserialize)]

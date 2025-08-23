@@ -8,12 +8,11 @@ use crate::ongoing_round_protection::{OngoingRoundProtection, OngoingRoundProtec
 #[derive(Debug)]
 pub struct AppState {
     pub config: Config,
-
     ongoing_round_protection: OngoingRoundProtection,
 }
 
 impl AppState {
-    pub fn load() -> eyre::Result<Self> {
+    pub async fn load() -> eyre::Result<Self> {
         let mut config: Config = toml::from_str(&std::fs::read_to_string("config.toml")?)?;
         config.raw_logs_path = config.raw_logs_path.canonicalize()?;
 
