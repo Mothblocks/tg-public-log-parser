@@ -1,10 +1,11 @@
-use std::{io::ErrorKind, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, io::ErrorKind, path::PathBuf, sync::Arc};
 
 use axum::{
-    extract::{OriginalUri, State},
+    extract::{OriginalUri, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
+use serde::Serialize;
 
 use crate::{app_state::AppState, parsers::get_file_sanitization_strategy};
 
@@ -13,10 +14,18 @@ pub const RUNTIME_CONDENSED_TXT: &str = "runtime.condensed.txt";
 
 const NOT_FOUND: (StatusCode, &str) = (StatusCode::NOT_FOUND, "couldn't find that path");
 
+#[derive(Serialize)]
+struct TraversalItem {
+    name: String,
+    path: String,
+    is_dir: bool,
+}
+
 #[tracing::instrument]
 pub async fn get(
     State(state): State<Arc<AppState>>,
     OriginalUri(uri): OriginalUri,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, axum::response::Response> {
     let requested_path = state
         .config
@@ -91,20 +100,38 @@ pub async fn get(
         })?;
 
     if metadata.is_dir() {
-        Ok((
-            StatusCode::OK,
-            headers("text/html"),
-            traversal_page(&state, &requested_path)
+        if params.get("json").map(|v| v == "true").unwrap_or(false) {
+            let items = collect_traversal_items(&state, &requested_path)
                 .await
                 .map_err(|error| {
                     error_to_response(
                         error,
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "error creating traversal page",
+                        "error creating traversal JSON",
                     )
-                }),
-        )
-            .into_response())
+                })?;
+            Ok((
+                StatusCode::OK,
+                headers("application/json"),
+                serde_json::to_string(&items).unwrap(),
+            )
+                .into_response())
+        } else {
+            Ok((
+                StatusCode::OK,
+                headers("text/html"),
+                traversal_page(&state, &requested_path)
+                    .await
+                    .map_err(|error| {
+                        error_to_response(
+                            error,
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "error creating traversal page",
+                        )
+                    }),
+            )
+                .into_response())
+        }
     } else if metadata.is_file() {
         let Some(strategy) = get_file_sanitization_strategy(&requested_path) else {
             return Ok(NOT_FOUND.into_response());
@@ -133,6 +160,70 @@ pub async fn get(
     }
 }
 
+async fn collect_traversal_items(
+    state: &AppState,
+    path: &std::path::Path,
+) -> eyre::Result<Vec<TraversalItem>> {
+    let mut items = vec![];
+
+    let read_dir = std::fs::read_dir(path)?;
+
+    for entry in read_dir {
+        let entry = entry?;
+        let entry_path = entry.path();
+
+        if state.path_is_ongoing_round(&entry_path).await? {
+            continue;
+        }
+
+        let file_type = entry.file_type()?;
+        let is_dir = file_type.is_dir();
+
+        // build path relative to raw_logs_path
+        let link_path = match entry_path.strip_prefix(&state.config.raw_logs_path) {
+            Ok(link_path) => link_path,
+            Err(_) => eyre::bail!("couldn't strip prefix with raw logs path"),
+        };
+
+        if is_dir || get_file_sanitization_strategy(&entry_path).is_some() {
+            items.push(TraversalItem {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                path: format!("/{}", link_path.display()),
+                is_dir,
+            });
+
+            // add fake runtime condensed links
+            if !is_dir
+                && entry_path
+                    .file_stem()
+                    .map(|s| s == "runtime")
+                    .unwrap_or(false)
+            {
+                items.push(TraversalItem {
+                    name: RUNTIME_CONDENSED_JSON.to_string(),
+                    path: format!(
+                        "/{}",
+                        link_path.with_file_name(RUNTIME_CONDENSED_JSON).display()
+                    ),
+                    is_dir: false,
+                });
+                items.push(TraversalItem {
+                    name: RUNTIME_CONDENSED_TXT.to_string(),
+                    path: format!(
+                        "/{}",
+                        link_path.with_file_name(RUNTIME_CONDENSED_TXT).display()
+                    ),
+                    is_dir: false,
+                });
+            }
+        }
+    }
+
+    items.sort_by(|a, b| (b.is_dir, &a.name).cmp(&(a.is_dir, &b.name)));
+
+    Ok(items)
+}
+
 fn headers(content_type: &str) -> [(&'static str, &str); 2] {
     [
         ("cache-control", "public, max-age=31536000"),
@@ -156,84 +247,43 @@ fn error_to_response(
 }
 
 async fn traversal_page(state: &AppState, path: &std::path::Path) -> eyre::Result<String> {
-    let mut items = vec![];
+    let items = collect_traversal_items(state, path).await?;
 
-    let read_dir = std::fs::read_dir(path)?;
-
-    for entry in read_dir {
-        let entry = entry?;
-
-        let entry_path = entry.path();
-
-        if state.path_is_ongoing_round(&entry_path).await? {
-            continue;
-        }
-
-        let entry_stem = match entry_path.file_stem() {
-            Some(entry_stem) => entry_stem.to_string_lossy(),
-            None => continue,
-        };
-
-        let link_path = match entry_path.strip_prefix(&state.config.raw_logs_path) {
-            Ok(link_path) => link_path,
-            Err(_) => eyre::bail!("couldn't strip prefix with raw logs path"),
-        };
-
-        let link_path_str = link_path.to_string_lossy();
-
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            items.push(format!(
-                "<li><a href='/{link_path_str}'>{entry_stem}/</a></li>"
-            ));
-        } else if get_file_sanitization_strategy(&entry_path).is_some() {
-            items.push(format!(
-                "<li><a href='/{link_path_str}'>{}</a></li>",
-                entry
-                    .path()
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-            ));
-
-            if entry_stem == "runtime" {
-                items.push(format!(
-                    "<li><a href='/{}'>{RUNTIME_CONDENSED_JSON}</a></li>",
-                    link_path.with_file_name(RUNTIME_CONDENSED_JSON).display()
-                ));
-
-                items.push(format!(
-                    "<li><a href='/{}'>{RUNTIME_CONDENSED_TXT}</a></li>",
-                    link_path.with_file_name(RUNTIME_CONDENSED_JSON).display()
-                ));
+    let list_html: String = items
+        .iter()
+        .map(|item| {
+            if item.is_dir {
+                format!(
+                    "<li><a href='{path}'>{name}/</a></li>",
+                    path = item.path,
+                    name = item.name
+                )
+            } else {
+                format!(
+                    "<li><a href='{path}'>{name}</a></li>",
+                    path = item.path,
+                    name = item.name
+                )
             }
-        }
-    }
-
-    // Folders first, then ABC order
-    items.sort_by(|a, b| (!a.contains("/</a>"), a).cmp(&(!b.contains("/</a>"), b)));
+        })
+        .collect();
 
     let relative_to_top = path.strip_prefix(&state.config.raw_logs_path)?;
 
     Ok(format!(
-        "
-			<html>
-				<head>
-					<title>{}</title>
-				</head>
-
-				<body>
-					<p>{}</p><hr />
-
-					<ul>
-						{}
-					</ul>
-				</body>
-			</html>
-		",
+        "<html>
+            <head>
+                <title>{}</title>
+            </head>
+            <body>
+                <p>{}</p>
+                <hr />
+                <ul>{}</ul>
+            </body>
+        </html>",
         relative_to_top.display(),
         link_segments(relative_to_top),
-        items.join("")
+        list_html
     ))
 }
 
