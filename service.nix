@@ -8,6 +8,7 @@ let
   package = import ./package.nix inputs;
   service-instances = lib.attrNames config.services.tg-public-log-parser;
   config-format = pkgs.formats.toml { };
+  cfg = config.services.tg-public-log-parser;
   package-wrapper = instance-name: pkgs.writeShellScriptBin "tg-public-log-parser-wrapper" ''
     cd /etc/tg-public-log-parser.d/${instance-name}
     exec ${package}/bin/tg-public-log-parser
@@ -44,10 +45,10 @@ in
       )
   };
 
-  config = lib.genAttrs (lib.attrNames config.services.tg-public-log-parser) (instance-name: lib.mkIf config.services.tg-public-log-parser."${instance-name}".enable {
+  config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
     environment.etc = {
       "tg-public-log-parser.d/${instance-name}/config.toml" = {
-        source = pkgs.formats.toml.generate "config" config.services.tg-public-log-parser."${instance-name}";
+        source = pkgs.formats.toml.generate "config" cfg."${instance-name}";
         mode = "0444";
       };
     };
@@ -57,7 +58,7 @@ in
       serviceConfig = {
         Type = "simple";
         DynamicUser = true;
-        SupplementaryGroups = config.services.tg-public-log-parser."${instance-name}".supplementary-groups;
+        SupplementaryGroups = cfg."${instance-name}".supplementary-groups;
         ExecStart = "${package-wrapper}/bin/tg-public-log-parser-wrapper";
         KillMode = "control-group";
         KillSignal = "KILL";
