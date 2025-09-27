@@ -24,6 +24,13 @@ in
           {
             options = {
               enable = lib.mkEnableOption "tg-public-log-parser for ${instance-name}";
+              supplementary-groups = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+                description = ''
+                  Extra groups to give the service access to.
+                '';
+              };
               config = lib.mkOption {
                 inherit (config-format) type;
                 default = { };
@@ -50,6 +57,7 @@ in
       serviceConfig = {
         Type = "simple";
         DynamicUser = true;
+        SupplementaryGroups = config.services.tg-public-log-parser."${instance-name}".supplementary-groups;
         ExecStart = "${package-wrapper}/bin/tg-public-log-parser-wrapper";
         KillMode = "control-group";
         KillSignal = "KILL";
