@@ -72,7 +72,7 @@ in
                 Configuration included in `config.toml`.
               '';
             };
-          };
+          }
         )
       )
     };
