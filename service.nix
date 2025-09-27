@@ -8,6 +8,7 @@ inputs@{
 let
   package = import ./package.nix inputs;
   config-format = pkgs.formats.toml { };
+  enabled-instances = lib.filterAttrs (instance-name: instance-config: instance-config.enable) config.services.tg-public-log-parser;
   package-wrapper = instance-name: pkgs.writeShellScriptBin "tg-public-log-parser-wrapper" ''
     cd /etc/tg-public-log-parser.d/${instance-name}
     exec ${package}/bin/tg-public-log-parser
@@ -45,19 +46,17 @@ in
   };
 
   config = {
-    environment.etc = lib.mapAttrs' (instance-name: instance-config: 
-      lib.mkIf instance-config.enable
+    environment.etc = lib.mapAttrs' (instance-name: instance-config:
       {
         name = "tg-public-log-parser.d/${instance-name}/config.toml";
         value = {
           source = config-format.generate "config" instance-config.config;
           mode = "0444";
         };
-      }) config.services.tg-public-log-parser;
+      }) enabled-instances;
 
     systemd.services = lib.mapAttrs' (instance-name: instance-config:
-      lib.mkIf instance-config.enable 
-      (builtins.trace "Wtf is this" {
+      {
         name = "tg-public-log-parser-${instance-name}";
         value = {
           description = "tg-public-log-parser-${instance-name}";
@@ -73,6 +72,6 @@ in
           wantedBy = [ "multi-user.target" ];
           after = ["network.target"];
         };
-      })) config.services.tg-public-log-parser;
+      }) enabled-instances;
   };
 }
