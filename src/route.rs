@@ -31,7 +31,11 @@ pub async fn get(
     match state.path_is_ongoing_round(&requested_path).await {
         Ok(true) => {
             tracing::debug!("blocking access to ongoing round");
-            return Ok(NOT_FOUND.into_response());
+            return Ok((
+                StatusCode::FORBIDDEN,
+                "This round is in progress! Check back later.",
+            )
+                .into_response());
         }
 
         Ok(false) => {}
