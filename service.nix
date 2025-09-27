@@ -13,9 +13,34 @@ let
     cd /etc/tg-public-log-parser.d/${instance-name}
     exec ${package}/bin/tg-public-log-parser
   '';
+
+  built-config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
+    environment.etc = {
+      "tg-public-log-parser.d/${instance-name}/config.toml" = {
+        source = pkgs.formats.toml.generate "config" cfg."${instance-name}";
+        mode = "0444";
+      };
+    };
+
+    systemd.services."tg-public-log-parser-${instance-name}" = {
+      description = "tg-public-log-parser-${instance-name}";
+      serviceConfig = {
+        Type = "simple";
+        DynamicUser = true;
+        SupplementaryGroups = cfg."${instance-name}".supplementary-groups;
+        ExecStart = "${package-wrapper}/bin/tg-public-log-parser-wrapper";
+        KillMode = "control-group";
+        KillSignal = "KILL";
+        Environment = "RUST_LOG=info";
+      };
+      wantedBy = [ "multi-user.target" ];
+      after = ["network.target"];
+    };
+  });
 in
 {
   options.services.tg-public-log-parser = {
+    enable = lib.mkEnableOption "all tg-public-log-parser instances";
     instances = lib.mkOption {
       description = ''
         Configure instances of the tg-public-log-parser.
@@ -47,27 +72,5 @@ in
     };
   };
 
-  config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
-    environment.etc = {
-      "tg-public-log-parser.d/${instance-name}/config.toml" = {
-        source = pkgs.formats.toml.generate "config" cfg."${instance-name}";
-        mode = "0444";
-      };
-    };
-
-    systemd.services."tg-public-log-parser-${instance-name}" = {
-      description = "tg-public-log-parser-${instance-name}";
-      serviceConfig = {
-        Type = "simple";
-        DynamicUser = true;
-        SupplementaryGroups = cfg."${instance-name}".supplementary-groups;
-        ExecStart = "${package-wrapper}/bin/tg-public-log-parser-wrapper";
-        KillMode = "control-group";
-        KillSignal = "KILL";
-        Environment = "RUST_LOG=info";
-      };
-      wantedBy = [ "multi-user.target" ];
-      after = ["network.target"];
-    };
-  });
+  config = lib.mkIf cfg.enable built-config;
 }
