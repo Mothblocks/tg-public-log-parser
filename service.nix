@@ -47,7 +47,7 @@ in
   config = {
     environment.etc = lib.mapAttrs (instance-name: instance-config: lib.mkIf instance-config.enable {
       "tg-public-log-parser.d/${instance-name}/config.toml" = {
-        source = pkgs.formats.toml.generate "config" instance-config.config;
+        source = config-format.generate "config" instance-config.config;
         mode = "0444";
       };
     }) config.services.tg-public-log-parser;
