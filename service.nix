@@ -7,9 +7,9 @@ inputs@{
 
 let
   package = import ./package.nix inputs;
-  service-instances = lib.attrNames config.services.tg-public-log-parser;
   config-format = pkgs.formats.toml { };
   cfg = config.services.tg-public-log-parser;
+  service-instances = lib.attrNames cfg;
   package-wrapper = instance-name: pkgs.writeShellScriptBin "tg-public-log-parser-wrapper" ''
     cd /etc/tg-public-log-parser.d/${instance-name}
     exec ${package}/bin/tg-public-log-parser
@@ -46,7 +46,7 @@ in
     );
   };
 
-  config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
+  config = lib.genAttrs (service-instances) (instance-name: lib.mkIf cfg."${instance-name}".enable {
     environment.etc = {
       "tg-public-log-parser.d/${instance-name}/config.toml" = {
         source = pkgs.formats.toml.generate "config" cfg."${instance-name}";
@@ -60,7 +60,7 @@ in
         Type = "simple";
         DynamicUser = true;
         SupplementaryGroups = cfg."${instance-name}".supplementary-groups;
-        ExecStart = "${package-wrapper}/bin/tg-public-log-parser-wrapper";
+        ExecStart = "${(package-wrapper instance-name)}/bin/tg-public-log-parser-wrapper";
         KillMode = "control-group";
         KillSignal = "KILL";
         Environment = "RUST_LOG=info";
