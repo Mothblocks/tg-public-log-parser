@@ -15,8 +15,7 @@ let
   '';
 in
 {
-  options.services.tg-public-log-parser = {
-    instances = lib.mkOption {
+  options.services.tg-public-log-parser = lib.mkOption {
       description = ''
         Configure instances of the tg-public-log-parser.
       '';
@@ -39,12 +38,11 @@ in
                 description = lib.mdDoc ''
                   Configuration included in `config.toml`.
                 '';
-              };
+              }
             };
           }
         )
       )
-    };
   };
 
   config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
