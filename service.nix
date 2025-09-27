@@ -57,7 +57,7 @@ in
 
     systemd.services = lib.mapAttrs' (instance-name: instance-config:
       lib.mkIf instance-config.enable 
-      {
+      (builtins.trace "Wtf is this" {
         name = "tg-public-log-parser-${instance-name}";
         value = {
           description = "tg-public-log-parser-${instance-name}";
@@ -73,6 +73,6 @@ in
           wantedBy = [ "multi-user.target" ];
           after = ["network.target"];
         };
-      }) config.services.tg-public-log-parser;
+      })) config.services.tg-public-log-parser;
   };
 }
