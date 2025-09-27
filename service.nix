@@ -14,39 +14,7 @@ let
     cd /etc/tg-public-log-parser.d/${instance-name}
     exec ${package}/bin/tg-public-log-parser
   '';
-in
-{
-  options.services.tg-public-log-parser = lib.mkOption {
-    description = ''
-      Configure instances of the tg-public-log-parser.
-    '';
-    type = lib.types.attrsOf (
-      lib.types.submodule (
-        { instance-name, ... }:
-        {
-          options = {
-            enable = lib.mkEnableOption "tg-public-log-parser for ${instance-name}";
-            supplementary-groups = lib.mkOption {
-              type = lib.types.str;
-              default = "";
-              description = ''
-                Extra groups to give the service access to.
-              '';
-            };
-            config = lib.mkOption {
-              inherit (config-format) type;
-              default = { };
-              description = lib.mdDoc ''
-                Configuration included in `config.toml`.
-              '';
-            };
-          };
-        }
-      )
-    );
-  };
-
-  config = lib.genAttrs (service-instances) (instance-name: lib.mkIf cfg."${instance-name}".enable {
+  built-service-implementation = lib.genAttrs (service-instances) (instance-name: lib.mkIf cfg."${instance-name}".enable {
     environment.etc = {
       "tg-public-log-parser.d/${instance-name}/config.toml" = {
         source = pkgs.formats.toml.generate "config" cfg."${instance-name}".config;
@@ -69,4 +37,46 @@ in
       after = ["network.target"];
     };
   });
+in
+{
+  options.services.tg-public-log-parser = {
+    instances = lib.mkOption {
+      description = ''
+        Configure instances of the tg-public-log-parser.
+      '';
+      type = lib.types.attrsOf (
+        lib.types.submodule (
+          { instance-name, ... }:
+          {
+            options = {
+              enable = lib.mkEnableOption "tg-public-log-parser for ${instance-name}";
+              supplementary-groups = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+                description = ''
+                  Extra groups to give the service access to.
+                '';
+              };
+              config = lib.mkOption {
+                inherit (config-format) type;
+                default = { };
+                description = lib.mdDoc ''
+                  Configuration included in `config.toml`.
+                '';
+              };
+            };
+            config = lib.mkOption {
+              inherit (config-format) type;
+              default = { };
+              description = lib.mdDoc ''
+                Configuration included in `config.toml`.
+              '';
+            };
+          };
+        )
+      )
+    };
+  };
+
+  config = lib.mkIf cfg.enable built-service-implementation;
 }
