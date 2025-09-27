@@ -49,7 +49,7 @@ in
   config = lib.genAttrs (service-instances) (instance-name: lib.mkIf cfg."${instance-name}".enable {
     environment.etc = {
       "tg-public-log-parser.d/${instance-name}/config.toml" = {
-        source = pkgs.formats.toml.generate "config" cfg."${instance-name}";
+        source = pkgs.formats.toml.generate "config" cfg."${instance-name}".config;
         mode = "0444";
       };
     };
