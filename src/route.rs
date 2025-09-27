@@ -100,7 +100,7 @@ pub async fn get(
         })?;
 
     if metadata.is_dir() {
-        if params.get("json").map(|v| v == "true").unwrap_or(false) {
+        if params.get("format").map(|v| v == "json").unwrap_or(false) {
             let items = collect_traversal_items(&state, &requested_path)
                 .await
                 .map_err(|error| {
