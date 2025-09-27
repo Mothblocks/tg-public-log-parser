@@ -44,7 +44,7 @@ in
       )
   };
 
-  config = lib.genAttrs (lib.attrNames config.services.tg-public-log-parser) (instance-name: {
+  config = lib.genAttrs (lib.attrNames config.services.tg-public-log-parser) (instance-name: lib.mkIf config.services.tg-public-log-parser."${instance-name}".enable {
     environment.etc = {
       "tg-public-log-parser.d/${instance-name}/config.toml" = {
         source = pkgs.formats.toml.generate "config" config.services.tg-public-log-parser."${instance-name}";
