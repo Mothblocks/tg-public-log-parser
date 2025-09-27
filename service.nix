@@ -38,11 +38,11 @@ in
               description = lib.mdDoc ''
                 Configuration included in `config.toml`.
               '';
-            }
+            };
           };
         }
       )
-    )
+    );
   };
 
   config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
