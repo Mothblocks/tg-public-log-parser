@@ -16,33 +16,33 @@ let
 in
 {
   options.services.tg-public-log-parser = lib.mkOption {
-      description = ''
-        Configure instances of the tg-public-log-parser.
-      '';
-      type = lib.types.attrsOf (
-        lib.types.submodule (
-          { instance-name, ... }:
-          {
-            options = {
-              enable = lib.mkEnableOption "tg-public-log-parser for ${instance-name}";
-              supplementary-groups = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                description = ''
-                  Extra groups to give the service access to.
-                '';
-              };
-              config = lib.mkOption {
-                inherit (config-format) type;
-                default = { };
-                description = lib.mdDoc ''
-                  Configuration included in `config.toml`.
-                '';
-              }
+    description = ''
+      Configure instances of the tg-public-log-parser.
+    '';
+    type = lib.types.attrsOf (
+      lib.types.submodule (
+        { instance-name, ... }:
+        {
+          options = {
+            enable = lib.mkEnableOption "tg-public-log-parser for ${instance-name}";
+            supplementary-groups = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = ''
+                Extra groups to give the service access to.
+              '';
             };
-          }
-        )
+            config = lib.mkOption {
+              inherit (config-format) type;
+              default = { };
+              description = lib.mdDoc ''
+                Configuration included in `config.toml`.
+              '';
+            }
+          };
+        }
       )
+    )
   };
 
   config = lib.genAttrs (lib.attrNames cfg) (instance-name: lib.mkIf cfg."${instance-name}".enable {
