@@ -8,8 +8,7 @@ inputs@{
 let
   package = import ./package.nix inputs;
   config-format = pkgs.formats.toml { };
-  cfg = config.services.tg-public-log-parser;
-  service-instances = lib.attrNames cfg;
+  enabled-instances = lib.filterAttrs (instance-name: instance-config: instance-config.enable) config.services.tg-public-log-parser;
   package-wrapper = instance-name: pkgs.writeShellScriptBin "tg-public-log-parser-wrapper" ''
     cd /etc/tg-public-log-parser.d/${instance-name}
     exec ${package}/bin/tg-public-log-parser
@@ -46,27 +45,33 @@ in
     );
   };
 
-  config = lib.genAttrs (service-instances) (instance-name: lib.mkIf cfg."${instance-name}".enable {
-    environment.etc = {
-      "tg-public-log-parser.d/${instance-name}/config.toml" = {
-        source = pkgs.formats.toml.generate "config" cfg."${instance-name}".config;
-        mode = "0444";
-      };
-    };
+  config = {
+    environment.etc = lib.mapAttrs' (instance-name: instance-config:
+      {
+        name = "tg-public-log-parser.d/${instance-name}/config.toml";
+        value = {
+          source = config-format.generate "config" instance-config.config;
+          mode = "0444";
+        };
+      }) enabled-instances;
 
-    systemd.services."tg-public-log-parser-${instance-name}" = {
-      description = "tg-public-log-parser-${instance-name}";
-      serviceConfig = {
-        Type = "simple";
-        DynamicUser = true;
-        SupplementaryGroups = cfg."${instance-name}".supplementary-groups;
-        ExecStart = "${(package-wrapper instance-name)}/bin/tg-public-log-parser-wrapper";
-        KillMode = "control-group";
-        KillSignal = "KILL";
-        Environment = "RUST_LOG=info";
-      };
-      wantedBy = [ "multi-user.target" ];
-      after = ["network.target"];
-    };
-  });
+    systemd.services = lib.mapAttrs' (instance-name: instance-config:
+      {
+        name = "tg-public-log-parser-${instance-name}";
+        value = {
+          description = "tg-public-log-parser-${instance-name}";
+          serviceConfig = {
+            Type = "simple";
+            DynamicUser = true;
+            SupplementaryGroups = instance-config.supplementary-groups;
+            ExecStart = "${(package-wrapper instance-name)}/bin/tg-public-log-parser-wrapper";
+            KillMode = "control-group";
+            KillSignal = "KILL";
+            Environment = "RUST_LOG=info";
+          };
+          wantedBy = [ "multi-user.target" ];
+          after = ["network.target"];
+        };
+      }) enabled-instances;
+  };
 }
