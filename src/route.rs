@@ -64,14 +64,14 @@ pub async fn get(
 
             if name == Some(RUNTIME_CONDENSED_TXT) {
                 return Ok((
-                    StatusCode::FOUND,
+                    StatusCode::OK,
                     headers("text/plain"),
                     crate::parsers::runtimes::condense_runtimes_to_string(&runtimes_contents),
                 )
                     .into_response());
             } else if name == Some(RUNTIME_CONDENSED_JSON) {
                 return Ok((
-                    StatusCode::FOUND,
+                    StatusCode::OK,
                     headers("application/json"),
                     crate::parsers::runtimes::condense_runtimes_to_json(&runtimes_contents)
                         .to_string(),
