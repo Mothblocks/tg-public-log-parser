@@ -71,6 +71,7 @@ in
           };
           wantedBy = [ "multi-user.target" ];
           after = ["network.target"];
+          restartTriggers = [ "/etc/tg-public-log-parser.d/${instance-name}/config.toml" ];
         };
       }) enabled-instances;
   };
